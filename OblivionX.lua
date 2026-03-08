@@ -20,6 +20,8 @@ local settings = {
     SPEED_BIND = "None",
     NOCLIP = false,
     NOCLIP_BIND = "H",
+    GODMODE = false,
+    GODMODE_BIND = "None",
 }
 
 local theme = {
@@ -438,7 +440,6 @@ local function updateESP()
 
         local col = settings.ESP_COLOR
 
-        -- Highlight
         local hl = Instance.new("Highlight")
         hl.Adornee=char; hl.Parent=workspace
         hl.FillColor=col; hl.FillTransparency=0.65
@@ -446,7 +447,6 @@ local function updateESP()
         hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
         espCache[player]=hl
 
-        -- Box ESP — full rectangle via UIStroke
         if settings.ESP_BOX then
             local bb = Instance.new("BillboardGui")
             bb.Adornee=root; bb.Parent=workspace
@@ -454,7 +454,6 @@ local function updateESP()
             bb.StudsOffset=Vector3.new(0,1,0)
             bb.AlwaysOnTop=true; bb.MaxDistance=settings.ESP_DISTANCE; bb.LightInfluence=0
 
-            -- Tam kare çerçeve (UIStroke ile)
             local border = Instance.new("Frame", bb)
             border.Size = UDim2.new(1,0,1,0)
             border.BackgroundTransparency = 1
@@ -467,7 +466,6 @@ local function updateESP()
             boxStroke.Transparency = 0
             boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
-            -- isim etiketi
             local nl = Instance.new("TextLabel", bb)
             nl.Size=UDim2.new(1,0,0,14); nl.Position=UDim2.new(0,0,0,-18)
             nl.BackgroundTransparency=1; nl.Text=player.Name
@@ -477,14 +475,12 @@ local function updateESP()
             boxCache[player]=bb
         end
 
-        -- Line cache
         if settings.ESP_LINE then
             lineCache[player]={root=root, color=col}
         end
     end
 end
 
--- Lines
 local lineObjects = {}
 local function clearLines()
     for _,ln in pairs(lineObjects) do pcall(function() ln:Remove() end) end
@@ -563,6 +559,31 @@ RS.RenderStepped:Connect(function()
     end)
 end)
 
+-- ── GODMODE ───────────────────────────────────────────────────────────────────
+-- Her frame'de can MaxHealth'e sabitlenir; ek olarak Humanoid.HealthChanged
+-- ile anında restore edilir (daha hızlı tepki için).
+local godmodeHealthConn = nil
+
+local function applyGodMode()
+    if not LP.Character then return end
+    local h = getHumanoid(LP.Character)
+    if not h then return end
+    -- Anlık sağlık restore bağlantısı
+    if godmodeHealthConn then godmodeHealthConn:Disconnect() godmodeHealthConn=nil end
+    if settings.GODMODE then
+        h.Health = h.MaxHealth
+        godmodeHealthConn = h.HealthChanged:Connect(function()
+            if settings.GODMODE then
+                pcall(function() h.Health = h.MaxHealth end)
+            end
+        end)
+    end
+end
+
+local function stopGodMode()
+    if godmodeHealthConn then godmodeHealthConn:Disconnect() godmodeHealthConn=nil end
+end
+
 RS.Stepped:Connect(function()
     pcall(function()
         if settings.NOCLIP and LP.Character then
@@ -574,11 +595,18 @@ RS.Stepped:Connect(function()
             local h=getHumanoid(LP.Character)
             if h then h.WalkSpeed=16*settings.SPEED_AMOUNT end
         end
+        -- GodMode frame bazlı yedek
+        if settings.GODMODE and LP.Character then
+            local h=getHumanoid(LP.Character)
+            if h and h.Health < h.MaxHealth then
+                pcall(function() h.Health=h.MaxHealth end)
+            end
+        end
     end)
 end)
 
 -- ── BUILD TABS ────────────────────────────────────────────────────────────────
-local flyToggleObj, noclipToggleObj, speedToggleObj, espToggleObj
+local flyToggleObj, noclipToggleObj, speedToggleObj, espToggleObj, godmodeToggleObj
 
 -- VISUAL
 createSection(visualTab, "ESP Options")
@@ -627,6 +655,17 @@ noclipToggleObj = createToggle(movementTab,"NoClip","Pass through walls",setting
     settings.NOCLIP=v
 end)
 
+-- ── GOD MODE (Movement tab) ───────────────────────────────────────────────────
+createSection(movementTab,"God Mode")
+godmodeToggleObj = createToggle(movementTab,"God Mode","Infinite health / ölümsüzlük",settings.GODMODE,function(v)
+    settings.GODMODE=v
+    if v then
+        applyGodMode()
+    else
+        stopGodMode()
+    end
+end)
+
 -- BINDS
 createSection(bindsTab,"ESP")
 createKeybind(bindsTab,"ESP Bind","Key to toggle ESP",settings.ESP_BIND,function(k)
@@ -646,6 +685,12 @@ end)
 createSection(bindsTab,"NoClip")
 createKeybind(bindsTab,"NoClip Bind","Key to toggle noclip",settings.NOCLIP_BIND,function(k)
     settings.NOCLIP_BIND=k
+end)
+
+-- ── GOD MODE BIND (Binds tab) ─────────────────────────────────────────────────
+createSection(bindsTab,"God Mode")
+createKeybind(bindsTab,"God Mode Bind","Key to toggle god mode",settings.GODMODE_BIND,function(k)
+    settings.GODMODE_BIND=k
 end)
 
 -- ── INPUT ─────────────────────────────────────────────────────────────────────
@@ -681,6 +726,16 @@ UIS.InputBegan:Connect(function(input, gp)
             if espToggleObj then espToggleObj.setState(settings.ESP,true) end
             updateESP()
         end
+
+        if key==settings.GODMODE_BIND and key~="None" then
+            settings.GODMODE=not settings.GODMODE
+            if godmodeToggleObj then godmodeToggleObj.setState(settings.GODMODE,true) end
+            if settings.GODMODE then
+                applyGodMode()
+            else
+                stopGodMode()
+            end
+        end
     end)
 end)
 
@@ -689,10 +744,15 @@ LP.CharacterAdded:Connect(function(char)
     task.wait(0.5)
     pcall(function()
         flying=false; stopFly()
+        stopGodMode()
         if settings.ESP then updateESP() end
         if settings.SPEED_HACK then
             task.wait(0.2)
             local h=getHumanoid(char); if h then h.WalkSpeed=16*settings.SPEED_AMOUNT end
+        end
+        if settings.GODMODE then
+            task.wait(0.2)
+            applyGodMode()
         end
     end)
 end)
