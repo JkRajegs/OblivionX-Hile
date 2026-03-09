@@ -28,6 +28,7 @@ local settings = {
     JUMP_BIND = "None",
     INFINITE_JUMP = false,
     INFINITE_JUMP_BIND = "None",
+    TELEPORT_CLICK = false,
 }
 
 local theme = {
@@ -607,6 +608,32 @@ end
 -- Infinite jump bağlantısını her zaman aktif tut; toggle içinde kontrol edilir
 startInfiniteJump()
 
+-- ── TELEPORT CLICK ────────────────────────────────────────────────────────────
+-- Ctrl basılıyken sol tık → tıklanan yere ışınla
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if not settings.TELEPORT_CLICK then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    if not UIS:IsKeyDown(Enum.KeyCode.LeftControl) and not UIS:IsKeyDown(Enum.KeyCode.RightControl) then return end
+    pcall(function()
+        local cam = workspace.CurrentCamera; if not cam then return end
+        local mouse = LP:GetMouse()
+        local unitRay = cam:ScreenPointToRay(mouse.X, mouse.Y)
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        if LP.Character then
+            rayParams.FilterDescendantsInstances = {LP.Character}
+        end
+        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 2000, rayParams)
+        if result then
+            local root = LP.Character and getRootPart(LP.Character)
+            if root then
+                root.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0))
+            end
+        end
+    end)
+end)
+
 -- ── STEPPED LOOP ─────────────────────────────────────────────────────────────
 RS.Stepped:Connect(function()
     pcall(function()
@@ -635,7 +662,7 @@ end)
 
 -- ── BUILD TABS ────────────────────────────────────────────────────────────────
 local flyToggleObj, noclipToggleObj, speedToggleObj, espToggleObj
-local godmodeToggleObj, jumpPowerToggleObj, infiniteJumpToggleObj
+local godmodeToggleObj, jumpPowerToggleObj, infiniteJumpToggleObj, teleportToggleObj
 
 -- VISUAL
 createSection(visualTab, "ESP Options")
@@ -700,6 +727,12 @@ createSlider(movementTab,"Jump Height","Jump power value",50,500,settings.JUMP_A
 end)
 infiniteJumpToggleObj = createToggle(movementTab,"Infinite Jump","Jump mid-air unlimited times",settings.INFINITE_JUMP,function(v)
     settings.INFINITE_JUMP=v
+end)
+
+-- TELEPORT
+createSection(movementTab,"Teleport")
+teleportToggleObj = createToggle(movementTab,"Click Teleport","Ctrl + Left Click to teleport",settings.TELEPORT_CLICK,function(v)
+    settings.TELEPORT_CLICK=v
 end)
 
 -- GOD MODE
