@@ -22,6 +22,12 @@ local settings = {
     NOCLIP_BIND = "H",
     GODMODE = false,
     GODMODE_BIND = "None",
+    -- ── YENİ ──
+    JUMP_POWER = false,
+    JUMP_AMOUNT = 50,
+    JUMP_BIND = "None",
+    INFINITE_JUMP = false,
+    INFINITE_JUMP_BIND = "None",
 }
 
 local theme = {
@@ -560,15 +566,12 @@ RS.RenderStepped:Connect(function()
 end)
 
 -- ── GODMODE ───────────────────────────────────────────────────────────────────
--- Her frame'de can MaxHealth'e sabitlenir; ek olarak Humanoid.HealthChanged
--- ile anında restore edilir (daha hızlı tepki için).
 local godmodeHealthConn = nil
 
 local function applyGodMode()
     if not LP.Character then return end
     local h = getHumanoid(LP.Character)
     if not h then return end
-    -- Anlık sağlık restore bağlantısı
     if godmodeHealthConn then godmodeHealthConn:Disconnect() godmodeHealthConn=nil end
     if settings.GODMODE then
         h.Health = h.MaxHealth
@@ -584,6 +587,27 @@ local function stopGodMode()
     if godmodeHealthConn then godmodeHealthConn:Disconnect() godmodeHealthConn=nil end
 end
 
+-- ── INFINITE JUMP ─────────────────────────────────────────────────────────────
+local infiniteJumpConn = nil
+
+local function startInfiniteJump()
+    if infiniteJumpConn then infiniteJumpConn:Disconnect() infiniteJumpConn=nil end
+    infiniteJumpConn = UIS.JumpRequest:Connect(function()
+        if settings.INFINITE_JUMP and LP.Character then
+            local h = getHumanoid(LP.Character)
+            if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
+end
+
+local function stopInfiniteJump()
+    if infiniteJumpConn then infiniteJumpConn:Disconnect() infiniteJumpConn=nil end
+end
+
+-- Infinite jump bağlantısını her zaman aktif tut; toggle içinde kontrol edilir
+startInfiniteJump()
+
+-- ── STEPPED LOOP ─────────────────────────────────────────────────────────────
 RS.Stepped:Connect(function()
     pcall(function()
         if settings.NOCLIP and LP.Character then
@@ -595,18 +619,23 @@ RS.Stepped:Connect(function()
             local h=getHumanoid(LP.Character)
             if h then h.WalkSpeed=16*settings.SPEED_AMOUNT end
         end
-        -- GodMode frame bazlı yedek
         if settings.GODMODE and LP.Character then
             local h=getHumanoid(LP.Character)
             if h and h.Health < h.MaxHealth then
                 pcall(function() h.Health=h.MaxHealth end)
             end
         end
+        -- Jump Power uygula
+        if settings.JUMP_POWER and LP.Character then
+            local h=getHumanoid(LP.Character)
+            if h then h.JumpPower=settings.JUMP_AMOUNT end
+        end
     end)
 end)
 
 -- ── BUILD TABS ────────────────────────────────────────────────────────────────
-local flyToggleObj, noclipToggleObj, speedToggleObj, espToggleObj, godmodeToggleObj
+local flyToggleObj, noclipToggleObj, speedToggleObj, espToggleObj
+local godmodeToggleObj, jumpPowerToggleObj, infiniteJumpToggleObj
 
 -- VISUAL
 createSection(visualTab, "ESP Options")
@@ -655,15 +684,29 @@ noclipToggleObj = createToggle(movementTab,"NoClip","Pass through walls",setting
     settings.NOCLIP=v
 end)
 
--- ── GOD MODE (Movement tab) ───────────────────────────────────────────────────
+-- ── JUMP (YENİ) ───────────────────────────────────────────────────────────────
+createSection(movementTab,"Jump")
+jumpPowerToggleObj = createToggle(movementTab,"Jump Power","Custom jump height",settings.JUMP_POWER,function(v)
+    settings.JUMP_POWER=v
+    if not v and LP.Character then
+        local h=getHumanoid(LP.Character); if h then h.JumpPower=50 end -- varsayılan değere sıfırla
+    end
+end)
+createSlider(movementTab,"Jump Height","Jump power value",50,500,settings.JUMP_AMOUNT,function(v)
+    settings.JUMP_AMOUNT=v
+    if settings.JUMP_POWER and LP.Character then
+        local h=getHumanoid(LP.Character); if h then h.JumpPower=v end
+    end
+end)
+infiniteJumpToggleObj = createToggle(movementTab,"Infinite Jump","Jump mid-air unlimited times",settings.INFINITE_JUMP,function(v)
+    settings.INFINITE_JUMP=v
+end)
+
+-- GOD MODE
 createSection(movementTab,"God Mode")
 godmodeToggleObj = createToggle(movementTab,"God Mode","Infinite health / ölümsüzlük",settings.GODMODE,function(v)
     settings.GODMODE=v
-    if v then
-        applyGodMode()
-    else
-        stopGodMode()
-    end
+    if v then applyGodMode() else stopGodMode() end
 end)
 
 -- BINDS
@@ -687,7 +730,15 @@ createKeybind(bindsTab,"NoClip Bind","Key to toggle noclip",settings.NOCLIP_BIND
     settings.NOCLIP_BIND=k
 end)
 
--- ── GOD MODE BIND (Binds tab) ─────────────────────────────────────────────────
+-- ── JUMP BİNDLARİ (YENİ) ─────────────────────────────────────────────────────
+createSection(bindsTab,"Jump")
+createKeybind(bindsTab,"Jump Power Bind","Key to toggle jump power",settings.JUMP_BIND,function(k)
+    settings.JUMP_BIND=k
+end)
+createKeybind(bindsTab,"Infinite Jump Bind","Key to toggle infinite jump",settings.INFINITE_JUMP_BIND,function(k)
+    settings.INFINITE_JUMP_BIND=k
+end)
+
 createSection(bindsTab,"God Mode")
 createKeybind(bindsTab,"God Mode Bind","Key to toggle god mode",settings.GODMODE_BIND,function(k)
     settings.GODMODE_BIND=k
@@ -730,11 +781,22 @@ UIS.InputBegan:Connect(function(input, gp)
         if key==settings.GODMODE_BIND and key~="None" then
             settings.GODMODE=not settings.GODMODE
             if godmodeToggleObj then godmodeToggleObj.setState(settings.GODMODE,true) end
-            if settings.GODMODE then
-                applyGodMode()
-            else
-                stopGodMode()
+            if settings.GODMODE then applyGodMode() else stopGodMode() end
+        end
+
+        -- YENİ: Jump Power bind
+        if key==settings.JUMP_BIND and key~="None" then
+            settings.JUMP_POWER=not settings.JUMP_POWER
+            if jumpPowerToggleObj then jumpPowerToggleObj.setState(settings.JUMP_POWER,true) end
+            if not settings.JUMP_POWER and LP.Character then
+                local h=getHumanoid(LP.Character); if h then h.JumpPower=50 end
             end
+        end
+
+        -- YENİ: Infinite Jump bind
+        if key==settings.INFINITE_JUMP_BIND and key~="None" then
+            settings.INFINITE_JUMP=not settings.INFINITE_JUMP
+            if infiniteJumpToggleObj then infiniteJumpToggleObj.setState(settings.INFINITE_JUMP,true) end
         end
     end)
 end)
@@ -754,6 +816,12 @@ LP.CharacterAdded:Connect(function(char)
             task.wait(0.2)
             applyGodMode()
         end
+        if settings.JUMP_POWER then
+            task.wait(0.2)
+            local h=getHumanoid(char); if h then h.JumpPower=settings.JUMP_AMOUNT end
+        end
+        -- Infinite jump bağlantısını yenile
+        startInfiniteJump()
     end)
 end)
 
